@@ -4,6 +4,7 @@
             {{ __('Dashboard') }}
         </h2>
         <p class="text-green-500 text-2xl">Modificación!!! Nuevo 2!!!</p>
+        <p class="text-green-500 text-2xl">Modificación!!! Nuevo 2!!! Favio</p>
     </x-slot>
 
     <div class="py-12">
