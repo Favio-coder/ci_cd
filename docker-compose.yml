@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: laravel-app:latest
+    container_name: laravel_app
+    ports:
+      - "8080:80"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: ci_cd
+      DB_USERNAME: supervisor
+      DB_PASSWORD: password123
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      MAIL_MAILER: smtp
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+    depends_on:
+      - db
+      - redis
+      - mailpit
+    networks:
+      - laravel-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: laravel_db
+    restart: always
+    environment:
+      POSTGRES_DB: ci_cd
+      POSTGRES_USER: supervisor
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgsql-data:/var/lib/postgresql/data
+    networks:
+      - laravel-network
+
+  redis:
+    image: redis:alpine
+    container_name: laravel_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - laravel-network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: laravel_mailpit
+    restart: always
+    ports:
+      - "8025:8025" # Mailpit Web UI (http://localhost:8025)
+      - "1025:1025" # SMTP server
+    networks:
+      - laravel-network
+
+networks:
+  laravel-network:
+    driver: bridge
+
+volumes:
+  pgsql-data:
+  redis-data:
+
