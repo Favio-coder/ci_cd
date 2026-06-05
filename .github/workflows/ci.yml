@@ -178,7 +178,7 @@ jobs:
             echo "Eliminando contenedor viejo..."
             docker rm laravel_app || true
             echo "Ejecutando nuevo contenedor..."
-            docker run -d -p 8000:8000 --name laravel_app ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd
+            docker run -d -p 8000:80 --name laravel_app ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd
             echo "✅ Deploy completado!"
             echo "Verificando contenedor:"
             docker ps | grep laravel_app || echo "⚠️ Contenedor no está corriendo"
