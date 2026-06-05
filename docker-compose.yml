@@ -11,7 +11,7 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       DB_CONNECTION: pgsql
-      DB_HOST: db
+      DB_HOST=127.0.0.1
       DB_PORT: 5432
       DB_DATABASE: ci_cd
       DB_USERNAME: supervisor

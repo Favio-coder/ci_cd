@@ -63,3 +63,58 @@ jobs:
 
       - name: Run tests
         run: php artisan test
+
+  build:
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login Docker Hub
+        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Build image
+        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd:latest .
+
+      - name: Push image
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd:latest
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script: |
+            # Login to Docker Hub on the server
+            echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+            
+            # Pull the latest image
+            docker pull ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd:latest
+            
+            # Stop and remove the existing container if it exists
+            docker stop laravel-app || true
+            docker rm laravel-app || true
+            
+            # Run the new container (example using environment variables, adjust port or volume mapping if needed)
+            docker run -d \
+              --name laravel-app \
+              --restart unless-stopped \
+              -p 80:80 \
+              --network=ci-cd-login_laravel-network \
+              -e DB_CONNECTION=pgsql \
+              -e DB_HOST=db \
+              -e DB_PORT=5432 \
+              -e DB_DATABASE=ci_cd \
+              -e DB_USERNAME=supervisor \
+              -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd:latest
