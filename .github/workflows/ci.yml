@@ -87,13 +87,113 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to VPS
+      - uses: actions/checkout@v4
+
+      # DEBUG: Verificar que los secrets existen
+      - name: Debug Secrets (verificar existencia)
+        run: |
+          echo "=== DEBUGGING SECRETS ==="
+          echo "VPS_HOST existe: ${{ secrets.VPS_HOST != '' && '✅ SÍ' || '❌ NO' }}"
+          echo "VPS_USER existe: ${{ secrets.VPS_USER != '' && '✅ SÍ' || '❌ NO' }}"
+          echo "VPS_SSH_KEY existe: ${{ secrets.VPS_SSH_KEY != '' && '✅ SÍ' || '❌ NO' }}"
+          echo "DOCKER_USERNAME existe: ${{ secrets.DOCKER_USERNAME != '' && '✅ SÍ' || '❌ NO' }}"
+          echo "========================="
+      
+      - name: Debug SSH Key Format
+        run: |
+          echo "=== SSH KEY DEBUG ==="
+          if [ -n "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "Longitud de la clave: ${{ secrets.VPS_SSH_KEY }} | wc -c"
+            echo "Primeros 30 caracteres:"
+            echo "${{ secrets.VPS_SSH_KEY }}" | cut -c1-30
+            echo "Contiene 'BEGIN': ${{ contains(secrets.VPS_SSH_KEY, 'BEGIN') && '✅ SÍ' || '❌ NO' }}"
+            echo "Contiene 'END': ${{ contains(secrets.VPS_SSH_KEY, 'END') && '✅ SÍ' || '❌ NO' }}"
+            echo "Primera línea:"
+            echo "${{ secrets.VPS_SSH_KEY }}" | head -1
+            echo "Última línea:"
+            echo "${{ secrets.VPS_SSH_KEY }}" | tail -1
+          else
+            echo "❌ ERROR: VPS_SSH_KEY está vacío o no existe!"
+          fi
+          echo "====================="
+      
+      # Crear archivo temporal con la clave para debug
+      - name: Create SSH key file for testing
+        run: |
+          echo "${{ secrets.VPS_SSH_KEY }}" > /tmp/test_ssh_key
+          echo "Archivo creado. Permisos:"
+          ls -la /tmp/test_ssh_key
+          echo "Primeras líneas del archivo:"
+          head -5 /tmp/test_ssh_key
+          echo "Últimas líneas del archivo:"
+          tail -3 /tmp/test_ssh_key
+      
+      # Probar conexión SSH directamente
+      - name: Test SSH Connection (direct)
+        run: |
+          echo "${{ secrets.VPS_SSH_KEY }}" > /tmp/deploy_key_test
+          chmod 600 /tmp/deploy_key_test
+          
+          echo "=== TESTING SSH CONNECTION ==="
+          ssh -v -i /tmp/deploy_key_test \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+              "echo '✅ Conexión SSH exitosa! Hostname: $(hostname)'" \
+              2>&1 || echo "❌ Falló la conexión SSH"
+          rm /tmp/deploy_key_test
+      
+      # Usar ssh-agent (solución recomendada)
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+      
+      - name: Test SSH Connection with Agent
+        run: |
+          echo "=== TESTING WITH SSH AGENT ==="
+          ssh -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=10 \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+              "echo '✅ Conexión exitosa con SSH Agent!'; echo 'Usuario: $(whoami)'; echo 'Fecha: $(date)'"
+      
+      # Agregar VPS a known_hosts (evita prompts)
+      - name: Add VPS to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ VPS agregado a known_hosts"
+      
+      # Deploy usando ssh-agent (sin pasar la clave explícitamente)
+      - name: Deploy to VPS with Agent
+        run: |
+          echo "=== STARTING DEPLOYMENT ==="
+          ssh -o StrictHostKeyChecking=no \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            echo "Conectado al VPS exitosamente"
+            echo "Pull de Docker image..."
+            docker pull ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd
+            echo "Deteniendo contenedor viejo..."
+            docker stop laravel_app || true
+            echo "Eliminando contenedor viejo..."
+            docker rm laravel_app || true
+            echo "Ejecutando nuevo contenedor..."
+            docker run -d -p 8000:8000 --name laravel_app ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd
+            echo "✅ Deploy completado!"
+            echo "Verificando contenedor:"
+            docker ps | grep laravel_app || echo "⚠️ Contenedor no está corriendo"
+          EOF
+      
+      # Fallback: Usar appleboy/ssh-action con la clave (por si acaso)
+      - name: Deploy to VPS (fallback)
+        if: failure()
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            echo "Deploy usando appleboy/ssh-action"
             docker pull ${{ secrets.DOCKER_USERNAME }}/laravel-ci-cd
             docker stop laravel_app || true
             docker rm laravel_app || true
